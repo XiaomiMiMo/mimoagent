@@ -1,0 +1,49 @@
+Executes a given bash command in a fresh shell with an optional timeout measured in milliseconds.
+
+Be aware: OS: ${os}, Shell: ${shell}
+
+`workdir` defaults to the current session directory. If provided, prefer an absolute path. Avoid using `cd <directory> && <command>` to select the initial directory.
+
+IMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools instead.
+
+Before executing the command, please follow these steps:
+
+1. Directory Verification:
+   - If the command will create new directories or files, first use `ls` to verify the parent directory exists and is the correct location
+   - For example, before running "mkdir foo/bar", first use `ls foo` to check that "foo" exists and is the intended parent
+
+2. Command Execution:
+   - Always quote file paths that contain spaces with double quotes (e.g., rm "path with spaces/file.txt")
+   - Examples of proper quoting:
+     - mkdir "/Users/name/My Documents" (correct)
+     - mkdir /Users/name/My Documents (incorrect - will fail)
+     - python "/path/with spaces/script.py" (correct)
+     - python /path/with spaces/script.py (incorrect - will fail)
+   - After ensuring proper quoting, execute the command.
+   - Capture the output of the command.
+
+Usage notes:
+  - The command argument is required.
+  - You can specify an optional timeout in milliseconds, up to ${max_timeout_ms}ms. If not specified, commands time out after ${default_timeout_ms}ms; raise it only for genuinely slow commands. Requests above ${max_timeout_ms}ms are capped at ${max_timeout_ms}ms, so a command that keeps timing out there needs to be made cheaper, not retried with a larger value.
+  - It is very helpful if you write a clear, concise description of what this command does in 5-10 words.
+  - If the output exceeds ${max_output_lines} lines or ${max_output_bytes} bytes, the observation starts with `...output truncated...` and keeps the beginning and the end within those limits; a `...N lines (M bytes) omitted here...` marker stands where the middle was cut. The omitted part is not recoverable afterwards, so make the command specific (e.g. run a single test file, use the tool's own filters) instead of producing unnecessarily large output.
+
+  - Avoid using Bash with the `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or when these commands are truly necessary for the task. Instead, always prefer using the dedicated tools for these commands:
+    - File search: Use `glob` (NOT find or ls)
+    - Content search: Use `grep` tool (NOT grep or rg)
+    - Read files: Use `read` tool (NOT cat/head/tail)
+    - Edit files: Use `edit` tool (NOT sed/awk)
+    - Write files: Use `write` tool (NOT echo >/cat <<EOF)
+    - Communication: Output text directly (NOT echo/printf)
+  - When issuing multiple commands:
+    - If the commands are independent and can run in parallel, make multiple Bash tool calls in a single message.
+    - If the commands depend on each other and must run sequentially, use a single Bash call with '&&' to chain them together.
+    - Use ';' only when you need to run commands sequentially but don't care if earlier commands fail
+    - Note that every tool call in a message runs concurrently, including edit and write: a command that reads, tests, or modifies a file can race with an edit or write of that file, or with another Bash call writing it, issued in the same message.
+    - DO NOT use newlines to separate commands (newlines are ok in quoted strings)
+    <good-example>
+    Use workdir="/foo/bar" with command: pytest tests
+    </good-example>
+    <bad-example>
+    cd /foo/bar && pytest tests
+    </bad-example>

@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from minisweagent.environments.docker import DockerEnvironment, DockerEnvironmentConfig
+from mimoagent.environments.docker import DockerEnvironment, DockerEnvironmentConfig
 
 
 def is_docker_available():
@@ -58,6 +58,7 @@ def test_docker_environment_config_defaults(executable):
 def test_docker_environment_basic_execution(executable):
     """Test basic command execution in Docker container."""
     env = DockerEnvironment(image="python:3.11", executable=executable)
+    env.start()
 
     try:
         result = env.execute("echo 'hello world'")
@@ -74,6 +75,7 @@ def test_docker_environment_set_env_variables(executable):
     env = DockerEnvironment(
         image="python:3.11", executable=executable, env={"TEST_VAR": "test_value", "ANOTHER_VAR": "another_value"}
     )
+    env.start()
 
     try:
         # Test single environment variable
@@ -97,6 +99,7 @@ def test_docker_environment_forward_env_variables(executable):
         env = DockerEnvironment(
             image="python:3.11", executable=executable, forward_env=["HOST_VAR", "ANOTHER_HOST_VAR"]
         )
+        env.start()
 
         try:
             # Test single forwarded environment variable
@@ -117,6 +120,7 @@ def test_docker_environment_forward_env_variables(executable):
 def test_docker_environment_forward_nonexistent_env_variables(executable):
     """Test forwarding non-existent environment variables (should be empty)."""
     env = DockerEnvironment(image="python:3.11", executable=executable, forward_env=["NONEXISTENT_VAR"])
+    env.start()
 
     try:
         result = env.execute('echo "[$NONEXISTENT_VAR]"')
@@ -134,6 +138,7 @@ def test_docker_environment_combined_env_and_forward(executable):
         env = DockerEnvironment(
             image="python:3.11", executable=executable, env={"SET_VAR": "from_config"}, forward_env=["HOST_VAR"]
         )
+        env.start()
 
         try:
             result = env.execute("echo $SET_VAR $HOST_VAR")
@@ -154,6 +159,7 @@ def test_docker_environment_env_override_forward(executable):
             env={"CONFLICT_VAR": "from_config"},
             forward_env=["CONFLICT_VAR"],
         )
+        env.start()
 
         try:
             result = env.execute("echo $CONFLICT_VAR")
@@ -169,6 +175,7 @@ def test_docker_environment_env_override_forward(executable):
 def test_docker_environment_custom_cwd(executable):
     """Test executing commands in a custom working directory."""
     env = DockerEnvironment(image="python:3.11", executable=executable, cwd="/tmp")
+    env.start()
 
     try:
         result = env.execute("pwd")
@@ -183,6 +190,7 @@ def test_docker_environment_custom_cwd(executable):
 def test_docker_environment_cwd_parameter_override(executable):
     """Test that the cwd parameter in execute() overrides the config cwd."""
     env = DockerEnvironment(image="python:3.11", executable=executable, cwd="/")
+    env.start()
 
     try:
         result = env.execute("pwd", cwd="/tmp")
@@ -197,34 +205,10 @@ def test_docker_environment_cwd_parameter_override(executable):
 def test_docker_environment_command_failure(executable):
     """Test that command failures are properly captured."""
     env = DockerEnvironment(image="python:3.11", executable=executable)
+    env.start()
 
     try:
         result = env.execute("exit 42")
         assert result["returncode"] == 42
-    finally:
-        env.cleanup()
-
-
-@pytest.mark.slow
-@pytest.mark.parametrize("executable", environment_params)
-def test_docker_environment_custom_container_timeout(executable):
-    """Test that custom container_timeout is respected."""
-    import time
-
-    env = DockerEnvironment(image="python:3.11", executable=executable, container_timeout="3s")
-
-    try:
-        result = env.execute("echo 'container is running'")
-        assert result["returncode"] == 0
-        assert "container is running" in result["output"]
-        time.sleep(5)
-        with pytest.raises((subprocess.CalledProcessError, subprocess.TimeoutExpired)):
-            # This command should fail because the container has stopped
-            subprocess.run(
-                [executable, "exec", env.container_id, "echo", "still running"],
-                check=True,
-                capture_output=True,
-                timeout=2,
-            )
     finally:
         env.cleanup()

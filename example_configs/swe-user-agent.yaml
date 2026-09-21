@@ -1,0 +1,75 @@
+use_dataset_env: true
+
+agent:
+  tools:
+    - tool: "bash"
+      config:
+        timeout: 300
+    - tool: "read"
+    - tool: "write"
+    - tool: "edit"
+    - tool: "agent"
+
+  system_template: |
+    You are an agent, your current working directory is {{cwd}}.
+
+    You can use the tools available to you to interact with the computer to assist the user in completing tasks.
+
+  instance_template: |
+    Fix the following issue:
+
+    {{task}}
+
+  # Limits
+  step_limit: 500
+
+
+# Environment configuration
+environment:
+  cwd: "/testbed"
+  timeout: 300
+  # Forward an egress proxy into the environment when your cluster needs one:
+  # env:
+  #   HTTP_PROXY: http://proxy.example.com:3128
+  #   HTTPS_PROXY: http://proxy.example.com:3128
+  #   NO_PROXY: localhost,127.0.0.1,.svc.cluster.local
+  environment_class: kubernetes
+
+model:
+  model_name: "${MIMOAGENT_MODEL_NAME:-gpt-5}"
+  protocol: "chat"
+  model_kwargs:
+    base_url: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+    api_key: "${OPENAI_API_KEY:-}"
+    temperature: 1.0
+
+# User-agent sidecar: after the main agent finishes a turn, a simulated user
+# reviews the trajectory + workspace and composes a follow-up query, driving
+# the main agent for more rounds. Works with any `agent.type` (default,
+# claude-code, codex). Remove this block (or set `enabled: false`) to disable.
+user_agent:
+  enabled: true
+  # Number of follow-up user turns after the main agent's first turn.
+  rounds: 2
+  # The user-agent runs on its own model (required; same shape as `model:`).
+  model:
+    model_name: "${MIMOAGENT_MODEL_NAME:-gpt-5}"
+    protocol: "chat"
+    model_kwargs:
+      base_url: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      api_key: "${OPENAI_API_KEY:-}"
+      temperature: 1.0
+  # Optional knobs (defaults shown):
+  # tools:                       # read-only toolset for inspecting the workspace
+  #   - tool: "bash"
+  #   - tool: "read"
+  # step_limit: 500              # user-agent's own tool-loop budget per run
+  # workspace_dir: "/tmp/.mimo-user-agent"  # private dir in the env holding the
+  #                              # query history (query_0.md = original task,
+  #                              # then query_1.md, query_2.md ... delivered by
+  #                              # the user-agent each round) and, for a native
+  #                              # main agent, a mirror of its msg file. Blackbox
+  #                              # agents' session logs are referenced in place
+  #                              # (/tmp/mimo-claude-logs/claude-code.txt,
+  #                              # /tmp/mimo-codex-logs/codex.txt) — no copying.
+  # system_template / first_prompt_template / followup_prompt_template

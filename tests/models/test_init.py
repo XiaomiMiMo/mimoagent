@@ -3,8 +3,8 @@ from unittest.mock import patch
 
 import pytest
 
-from minisweagent.models import GlobalModelStats, get_model, get_model_class, get_model_name
-from minisweagent.models.test_models import DeterministicModel
+from mimoagent.models import GlobalModelStats, get_model, get_model_class, get_model_name
+from mimoagent.models.test_models import DeterministicModel
 
 
 class TestGetModelName:
@@ -13,17 +13,17 @@ class TestGetModelName:
 
     def test_input_model_name_takes_precedence(self):
         """Test that explicit input_model_name overrides all other sources."""
-        with patch.dict(os.environ, {"MSWEA_MODEL_NAME": "env-model"}):
+        with patch.dict(os.environ, {"MIMOAGENT_MODEL_NAME": "env-model"}):
             assert get_model_name("input-model", self.CONFIG_WITH_MODEL_NAME) == "input-model"
 
     def test_config_takes_precedence_over_env(self):
         """Test that config takes precedence over environment variable."""
-        with patch.dict(os.environ, {"MSWEA_MODEL_NAME": "env-model"}):
+        with patch.dict(os.environ, {"MIMOAGENT_MODEL_NAME": "env-model"}):
             assert get_model_name(None, self.CONFIG_WITH_MODEL_NAME) == "config-model"
 
     def test_env_var_fallback(self):
         """Test that environment variable is used when no config provided."""
-        with patch.dict(os.environ, {"MSWEA_MODEL_NAME": "env-model"}):
+        with patch.dict(os.environ, {"MIMOAGENT_MODEL_NAME": "env-model"}):
             assert get_model_name(None, {}) == "env-model"
 
     def test_config_fallback(self):
@@ -34,42 +34,40 @@ class TestGetModelName:
     def test_raises_error_when_no_model_configured(self):
         """Test that ValueError is raised when no model is configured anywhere."""
         with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(
-                ValueError, match="No default model set. Please run `mini-extra config setup` to set one."
-            ):
+            with pytest.raises(ValueError, match="No model configured"):
                 get_model_name(None, {})
 
-            with pytest.raises(
-                ValueError, match="No default model set. Please run `mini-extra config setup` to set one."
-            ):
+            with pytest.raises(ValueError, match="No model configured"):
                 get_model_name(None, None)
 
 
 class TestGetModelClass:
-    def test_anthropic_model_selection(self):
-        """Test that anthropic-related model names return AnthropicModel."""
-        from minisweagent.models.anthropic import AnthropicModel
+    def test_protocol_routing(self):
+        """The ``protocol`` field is the only routing input."""
+        from mimoagent.models.anthropic import AnthropicModel
+        from mimoagent.models.openai_chat import OpenAIChatModel
+        from mimoagent.models.openai_responses import OpenAIResponsesModel
 
-        for name in ["anthropic", "sonnet", "opus", "claude-sonnet", "claude-opus"]:
-            assert get_model_class(name) == AnthropicModel
+        assert get_model_class("any-name", {"protocol": "chat"}) == OpenAIChatModel
+        assert get_model_class("any-name", {"protocol": "anthropic"}) == AnthropicModel
+        assert get_model_class("any-name", {"protocol": "responses"}) == OpenAIResponsesModel
 
-    def test_litellm_model_fallback(self):
-        """Test that non-anthropic model names return LitellmModel."""
-        from minisweagent.models.litellm_model import LitellmModel
+    def test_model_name_plays_no_role(self):
+        """claude-ish names do NOT sniff-route; only protocol decides."""
+        from mimoagent.models.openai_chat import OpenAIChatModel
 
-        for name in ["gpt-4", "gpt-3.5-turbo", "llama2", "random-model"]:
-            assert get_model_class(name) == LitellmModel
+        assert get_model_class("claude-opus-5", {"protocol": "chat"}) == OpenAIChatModel
 
-    def test_partial_matches(self):
-        """Test that partial string matches work correctly."""
-        from minisweagent.models.anthropic import AnthropicModel
-        from minisweagent.models.litellm_model import LitellmModel
+    def test_missing_protocol_defaults_to_chat(self):
+        """Blackbox configs omit protocol; the model is just a config carrier."""
+        from mimoagent.models.openai_chat import OpenAIChatModel
 
-        assert get_model_class("my-anthropic-model") == AnthropicModel
-        assert get_model_class("sonnet-latest") == AnthropicModel
-        assert get_model_class("opus-v2") == AnthropicModel
-        assert get_model_class("gpt-anthropic-style") == AnthropicModel
-        assert get_model_class("totally-different") == LitellmModel
+        assert get_model_class("gpt-4") == OpenAIChatModel
+        assert get_model_class("claude-opus-5", {}) == OpenAIChatModel
+
+    def test_invalid_protocol_raises(self):
+        with pytest.raises(ValueError, match="model.protocol must be one of"):
+            get_model_class("gpt-4", {"protocol": "openai"})
 
 
 class TestGetModel:
@@ -77,7 +75,7 @@ class TestGetModel:
         """Test that get_model preserves original config via deep copy."""
         original_config = {"model_kwargs": {"api_key": "original"}, "outputs": ["test"]}
 
-        with patch("minisweagent.models.get_model_class") as mock_get_class:
+        with patch("mimoagent.models.get_model_class") as mock_get_class:
             mock_get_class.return_value = lambda **kwargs: DeterministicModel(outputs=["test"], model_name="test")
             get_model("test-model", original_config)
             assert original_config["model_kwargs"]["api_key"] == "original"
@@ -85,7 +83,7 @@ class TestGetModel:
 
     def test_integration_with_compatible_model(self):
         """Test get_model works end-to-end with a model that handles extra kwargs."""
-        with patch("minisweagent.models.get_model_class") as mock_get_class:
+        with patch("mimoagent.models.get_model_class") as mock_get_class:
 
             def compatible_model(**kwargs):
                 # Filter to only what DeterministicModel accepts, provide defaults
@@ -100,27 +98,6 @@ class TestGetModel:
             assert model.config.outputs == ["hello"]
             assert model.config.model_name == "test-model"
 
-    def test_env_var_overrides_config_api_key(self):
-        """Test that MSWEA_MODEL_API_KEY overrides config api_key."""
-        with patch.dict(os.environ, {"MSWEA_MODEL_API_KEY": "env-key"}):
-            # Capture the arguments passed to the model constructor
-            captured_kwargs = {}
-
-            def mock_model_constructor(**kwargs):
-                captured_kwargs.update(kwargs)
-                return DeterministicModel(
-                    outputs=kwargs.get("outputs", ["test"]),
-                    model_name=kwargs.get("model_name", "test"),
-                )
-
-            with patch("minisweagent.models.get_model_class") as mock_get_class:
-                mock_get_class.return_value = mock_model_constructor
-
-                config = {"model_kwargs": {"api_key": "config-key"}, "outputs": ["test"]}
-                get_model("test-model", config)
-
-                assert captured_kwargs["model_kwargs"]["api_key"] == "env-key"
-
     def test_config_api_key_used_when_no_env_var(self):
         """Test that config api_key is used when env var is not set."""
         with patch.dict(os.environ, {}, clear=True):
@@ -134,33 +111,13 @@ class TestGetModel:
                     model_name=kwargs.get("model_name", "test"),
                 )
 
-            with patch("minisweagent.models.get_model_class") as mock_get_class:
+            with patch("mimoagent.models.get_model_class") as mock_get_class:
                 mock_get_class.return_value = mock_model_constructor
 
                 config = {"model_kwargs": {"api_key": "config-key"}, "outputs": ["test"]}
                 get_model("test-model", config)
 
                 assert captured_kwargs["model_kwargs"]["api_key"] == "config-key"
-
-    def test_env_var_sets_api_key_when_no_config_key(self):
-        """Test that MSWEA_MODEL_API_KEY is used when config has no api_key."""
-        with patch.dict(os.environ, {"MSWEA_MODEL_API_KEY": "env-key"}):
-            # Capture the arguments passed to the model constructor
-            captured_kwargs = {}
-
-            def mock_model_constructor(**kwargs):
-                captured_kwargs.update(kwargs)
-                return DeterministicModel(
-                    outputs=kwargs.get("outputs", ["test"]),
-                    model_name=kwargs.get("model_name", "test"),
-                )
-
-            with patch("minisweagent.models.get_model_class") as mock_get_class:
-                mock_get_class.return_value = mock_model_constructor
-
-                config = {"outputs": ["test"]}
-                get_model("test-model", config)
-                assert captured_kwargs["model_kwargs"]["api_key"] == "env-key"
 
     def test_no_api_key_when_none_provided(self):
         """Test that no api_key is set when neither env var nor config provide one."""
@@ -175,7 +132,7 @@ class TestGetModel:
                     model_name=kwargs.get("model_name", "test"),
                 )
 
-            with patch("minisweagent.models.get_model_class") as mock_get_class:
+            with patch("mimoagent.models.get_model_class") as mock_get_class:
                 mock_get_class.return_value = mock_model_constructor
 
                 config = {"outputs": ["test"]}
@@ -185,48 +142,39 @@ class TestGetModel:
 
 
 class TestGlobalModelStats:
-    def test_prints_cost_limit_when_set(self, capsys):
-        """Test that cost limit is printed when MSWEA_GLOBAL_COST_LIMIT is set."""
-        with patch.dict(os.environ, {"MSWEA_GLOBAL_COST_LIMIT": "5.5"}, clear=True):
-            GlobalModelStats()
-            captured = capsys.readouterr()
-            assert "Global cost/call limit: $5.5000 / 0" in captured.out
-
     def test_prints_call_limit_when_set(self, capsys):
-        """Test that call limit is printed when MSWEA_GLOBAL_CALL_LIMIT is set."""
-        with patch.dict(os.environ, {"MSWEA_GLOBAL_CALL_LIMIT": "10"}, clear=True):
+        """Call limit is printed when MIMOAGENT_GLOBAL_CALL_LIMIT is set."""
+        with patch.dict(os.environ, {"MIMOAGENT_GLOBAL_CALL_LIMIT": "10"}, clear=True):
             GlobalModelStats()
             captured = capsys.readouterr()
-            assert "Global cost/call limit: $0.0000 / 10" in captured.out
-
-    def test_prints_both_limits_when_both_set(self, capsys):
-        """Test that both limits are printed when both environment variables are set."""
-        with patch.dict(os.environ, {"MSWEA_GLOBAL_COST_LIMIT": "2.5", "MSWEA_GLOBAL_CALL_LIMIT": "5"}, clear=True):
-            GlobalModelStats()
-            captured = capsys.readouterr()
-            assert "Global cost/call limit: $2.5000 / 5" in captured.out
+            assert "Global call limit: 10" in captured.out
 
     def test_no_print_when_silent_startup_set(self, capsys):
-        """Test that limits are not printed when MSWEA_SILENT_STARTUP is set."""
+        """Limits are not printed when MIMOAGENT_SILENT_STARTUP is set."""
         with patch.dict(
             os.environ,
-            {"MSWEA_GLOBAL_COST_LIMIT": "5.0", "MSWEA_GLOBAL_CALL_LIMIT": "10", "MSWEA_SILENT_STARTUP": "1"},
+            {"MIMOAGENT_GLOBAL_CALL_LIMIT": "10", "MIMOAGENT_SILENT_STARTUP": "1"},
             clear=True,
         ):
             GlobalModelStats()
             captured = capsys.readouterr()
-            assert "Global cost/call limit" not in captured.out
+            assert "Global call limit" not in captured.out
 
-    def test_no_print_when_no_limits_set(self, capsys):
-        """Test that nothing is printed when no limits are set."""
+    def test_no_print_when_no_limit_set(self, capsys):
+        """Nothing is printed when no limit is set."""
         with patch.dict(os.environ, {}, clear=True):
             GlobalModelStats()
             captured = capsys.readouterr()
-            assert "Global cost/call limit" not in captured.out
+            assert "Global call limit" not in captured.out
 
-    def test_no_print_when_limits_are_zero(self, capsys):
-        """Test that nothing is printed when limits are explicitly set to zero."""
-        with patch.dict(os.environ, {"MSWEA_GLOBAL_COST_LIMIT": "0", "MSWEA_GLOBAL_CALL_LIMIT": "0"}, clear=True):
-            GlobalModelStats()
-            captured = capsys.readouterr()
-            assert "Global cost/call limit" not in captured.out
+    def test_call_limit_enforced(self):
+        """Exceeding the call limit raises."""
+        from mimoagent.models import TokenStats
+
+        # The limit check fires on the call that *reaches* it: with limit=2 the
+        # first add passes (1 < 2), the second raises (2 reaches the limit).
+        with patch.dict(os.environ, {"MIMOAGENT_GLOBAL_CALL_LIMIT": "2", "MIMOAGENT_SILENT_STARTUP": "1"}, clear=True):
+            stats = GlobalModelStats()
+            stats.add(TokenStats())
+            with pytest.raises(RuntimeError, match="Global call limit exceeded"):
+                stats.add(TokenStats())

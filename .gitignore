@@ -1,9 +1,12 @@
 patch.txt
 exit_statuses*.yaml
 preds.json
-*.traj.json
 .env
 traj.json
+
+# Exclude trajectory files but allow test data
+*.traj.json
+!tests/test_data/*.traj.json
 
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python
@@ -182,3 +185,10 @@ pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python
 
+# mimoagent run artefacts and local data
+outputs/
+data/
+dist/
+**/*.parquet
+**/*.ipynb
+tmp/

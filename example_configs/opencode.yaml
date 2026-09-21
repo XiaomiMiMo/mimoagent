@@ -1,0 +1,33 @@
+# Run upstream opencode (1.18.18 pinned, wire behaviour re-verified on it) as a MiMo Agent harness, selected by
+# ``agent.type: opencode``. Single bun-compiled binary payload. Headless via
+# ``opencode run --format json``; the NDJSON event log is copied out to
+# ``opencode.txt``. The MiMo-Code fork's adapter is ``mimocode`` — this one
+# tracks upstream.
+#
+# Verified against an Anthropic-compatible gateway serving claude-opus-5: adaptive thinking +
+# output_config.effort via a handwritten model variant, signature replay,
+# cache hits. NOTE: that channel rejects any request whose tools include the
+# name "todowrite" (400 "Third-party apps..."), so the adapter strips the
+# todo tool from every built-in agent by default (``todo_tool: false``).
+use_dataset_env: true
+
+agent:
+  type: opencode
+  version: 1.18.18
+  thinking_effort: xhigh  # adaptive + effort, via --variant
+  context_limit: 1000000
+  output_limit: 65536     # >32000 is unlocked via OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX
+  # thinking_budget: 8192 # budget mode, mutually exclusive with thinking_effort
+  # todo_tool: false      # true restores todowrite (gateways without the fingerprint)
+  # skip_install: false
+
+environment:
+  cwd: "/testbed"
+  timeout: 300
+  environment_class: kubernetes
+
+model:
+  model_name: "claude-opus-5"
+  model_kwargs:
+    base_url: "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"
+    api_key: "${ANTHROPIC_API_KEY:-}"

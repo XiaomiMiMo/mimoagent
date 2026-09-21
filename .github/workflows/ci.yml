@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint, lock and hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --all-extras
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv lock --check
+      - name: Shell syntax
+        run: |
+          for f in src/mimoagent/agents/blackbox/resources/*.sh scripts/*.sh scripts/harness_payloads/*.sh; do
+            bash -n "$f"
+          done
+      - name: Public-repository hygiene
+        run: bash scripts/check_oss_hygiene.sh
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test:
+    name: Tests (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install ripgrep (used by the Grep tool tests)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+      - run: uv sync --all-extras
+      - run: uv run pytest -q -m "not integration" -n auto
+      - name: Console script installs without dev dependencies
+        run: |
+          uv build
+          python3 -m venv /tmp/mimo-venv
+          /tmp/mimo-venv/bin/pip install --quiet dist/*.whl
+          /tmp/mimo-venv/bin/mimoagent --help > /dev/null

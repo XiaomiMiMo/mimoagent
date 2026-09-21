@@ -1,13 +1,13 @@
 import pytest
 
-from minisweagent.environments import get_environment_class
-from minisweagent.environments.local import LocalEnvironment
+from mimoagent.environments import get_environment_class
+from mimoagent.environments.local import LocalEnvironment
 
 
 class TestGetEnvironmentClass:
     def test_get_environment_class_local_full_path(self):
         """Test that get_environment_class returns LocalEnvironment when given full module path."""
-        env_class = get_environment_class("minisweagent.environments.local.LocalEnvironment")
+        env_class = get_environment_class("mimoagent.environments.local.LocalEnvironment")
         assert env_class is LocalEnvironment
 
     def test_get_environment_class_local_shorthand(self):

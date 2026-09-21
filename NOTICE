@@ -1,0 +1,37 @@
+MiMo Agent (mimoagent)
+Copyright (c) 2026 Xiaomi Corporation
+
+This project is distributed under the MIT License (see LICENSE.md).
+
+Provenance
+----------
+mimoagent is a fork of mini-swe-agent version 1.9.0
+(https://github.com/SWE-agent/mini-swe-agent, upstream commit b3d50788,
+2025-08-17), Copyright (c) 2025 Kilian A. Lieret and Carlos E. Jimenez,
+licensed under the MIT License. The package was renamed from `minisweagent`
+to `mimoagent`; the agent loop, model adapters, environments, datasets and
+tooling have since been substantially rewritten and extended. The original
+copyright notice is retained in LICENSE.md.
+
+Third-party materials
+---------------------
+- `src/mimoagent/tools/codex/` and `src/mimoagent/agents/codex/prompts/`
+  re-implement tool semantics and prompt text of the OpenAI Codex CLI
+  (https://github.com/openai/codex, Apache License 2.0). The `codex-agent`
+  downloads the `codex-code-mode-host` binary from that project's GitHub
+  releases at run time.
+- `src/mimoagent/tools/cc/` follows the tool schemas and descriptions of
+  Anthropic's Claude Code (https://github.com/anthropics/claude-code) so that
+  models see a familiar catalogue.
+- `src/mimoagent/tools/mimocode/` and `src/mimoagent/agents/mimocode/prompts/`
+  follow the tool catalogue of MiMo-Code (https://github.com/XiaomiMiMo/MiMo-Code).
+- The blackbox adapters under `src/mimoagent/agents/blackbox/` install and run
+  third-party coding CLIs (Claude Code, Codex CLI, MiMo-Code, OpenCode, Pi,
+  Grok Build, Kimi Code, Kimi CLI, Kilo Code, OpenClaw, Oh My Pi, Hermes Agent,
+  DeepSeek Harness, mini-swe-agent) from their upstream public distributions.
+  Each is subject to its own license; mimoagent does not redistribute them.
+  Some installers apply small, documented source patches at install time
+  (see the header comment of each `install-<name>.sh`).
+- The `Grep`/`Glob` tools stage ripgrep (https://github.com/BurntSushi/ripgrep,
+  MIT / Unlicense) into task environments that lack it, downloading the
+  upstream release binary on demand.

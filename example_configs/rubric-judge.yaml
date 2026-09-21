@@ -1,0 +1,102 @@
+# Rubric judge — agentic reward stacked on any dataset.
+#
+# Rubric is not a dataset type. Instances belong to whatever dataset they
+# really are (dataset_type: generic for git_url / image-baked repos,
+# ...) and additionally carry a rubric.rubrics list of
+# natural-language criteria (bare strings or {text, category} objects). When
+# such an instance meets a yaml `environment.judge_agent` block, the base
+# DatasetEnvironment runs a judge agent (own model, same pod) after the doer
+# finishes: it receives the task / doer trajectory / final response / model
+# patch / rubrics in a private workspace, judges each rubric 1/0 (it may run
+# tests, read code, git diff — it sees the doer's final state), and delivers
+# verdicts.json. Rubric reward = mean of the verdicts; per-rubric detail lands
+# in reward_extra_info.json (rubric_verdicts, rubric_reward) and the whole
+# judge workspace is copied out to <output>/<instance>/judge_workspace/.
+#
+# Datasets with their own verifier keep it: by default the
+# judge runs FIRST (so it sees the state the doer delivered, before the
+# verifier applies test patches), then the verifier, and the scalar reward
+# stays the verifier's unless `judge_agent.combine` says otherwise. Instances
+# without rubrics, or runs without a judge_agent block, behave exactly as
+# before — the judge never runs.
+
+use_dataset_env: true
+
+agent:
+  tools:
+    - tool: "bash"
+      config:
+        timeout: 300
+    - tool: "read"
+    - tool: "write"
+    - tool: "edit"
+    - tool: "agent"
+
+  system_template: |
+    You are an agent, your current working directory is {{cwd}}.
+
+    You can use the tools available to you to interact with the computer to assist the user in completing tasks.
+
+  instance_template: |
+    {{task}}
+
+  # Limits
+  step_limit: 500
+
+
+# Environment configuration
+environment:
+  timeout: 300
+  # Forward an egress proxy into the environment when your cluster needs one:
+  # env:
+  #   HTTP_PROXY: http://proxy.example.com:3128
+  #   HTTPS_PROXY: http://proxy.example.com:3128
+  #   NO_PROXY: localhost,127.0.0.1,.svc.cluster.local
+  environment_class: kubernetes
+
+  # Which reward stages run (default auto):
+  #   auto         — both when rubrics + judge_agent are present on a dataset with
+  #                  a verifier; rubric-only on a verifier-less dataset (generic);
+  #                  verifier-only otherwise.
+  #   programmatic — verifier only; never runs the judge.
+  #   rubric       — judge only (skips the dataset's tests). Requires rubrics + judge_agent.
+  #   both         — judge, then verifier. Requires rubrics + judge_agent + a verifier.
+  # reward_mode: auto
+
+  judge_agent:
+    model:
+      model_name: "${MIMOAGENT_JUDGE_MODEL_NAME:-gpt-5}"
+      protocol: "chat"
+      model_kwargs:
+        base_url: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+        api_key: "${OPENAI_API_KEY:-}"
+        temperature: 0.0
+    # Optional knobs (defaults shown):
+    # tools:                     # bash to run rubric-specified checks + read
+    #   - tool: "bash"
+    #   - tool: "read"
+    # step_limit: 100            # judge's own tool-loop budget
+    # workspace_dir: "/tmp/.mimo-rubric-judge"  # private dir in the pod holding
+    #                            # task.md / response.md / rubrics.json /
+    #                            # model_patch.diff / doer trajectory, plus the
+    #                            # judge's verdicts.json deliverable
+    # system_template / prompt_template
+    # combine: programmatic       # scalar when BOTH verifier and judge ran:
+    #                            #   programmatic (default) — verifier's reward; rubric informational
+    #                            #   rubric                 — rubric mean; verifier informational
+    #                            #   product                — programmatic * rubric
+    #                            #   weighted               — (1-w)*programmatic + w*rubric
+    # rubric_weight: 0.5         # w for combine: weighted
+    # solution_weight: 0.5      # when the instance carries a graded rubric.solution:
+    #                            #   rubric_reward = w·S + (1−w)·B, B = mean of the binary verdicts,
+    #                            #   S = score of the solution level reached
+    #                            #   (tests gate via combine: product);
+    #                            #   rubric.solution_weight on the instance overrides this
+
+model:
+  model_name: "${MIMOAGENT_MODEL_NAME:-gpt-5}"
+  protocol: "chat"
+  model_kwargs:
+    base_url: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+    api_key: "${OPENAI_API_KEY:-}"
+    temperature: 1.0

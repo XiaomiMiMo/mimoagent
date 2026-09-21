@@ -1,0 +1,54 @@
+# Run the upstream OpenAI Codex CLI as the agent, instead of the native
+# mimoagent tool-calling loop. Selected purely by ``agent.type: codex``.
+#
+# The full NDJSON event stream is copied out to ``codex.txt`` next to the
+# agent msg file. Codex runs *inside the test pod*
+# and edits the repo in-place; mimoagent grades the result exactly as it does
+# for the native agent (``git diff HEAD`` in ``cwd`` → calculate_reward).
+# Auth/model routing is taken from the shared ``model:`` block below.
+#
+# Run:
+#   python src/mimoagent/run/extra/batch.py \
+#       --output outputs/codex-test \
+#       --config example_configs/codex.yaml \
+#       --workers 4 --slice 0:4 \
+#       --dataset princeton-nlp/SWE-bench_Verified --split test
+use_dataset_env: true
+
+agent:
+  type: codex
+  # cwd defaults to the environment's working dir (/testbed below).
+  # version: latest        # CDN bundle to install: "latest" or a pin like "0.153.4"
+  effort: high            # model_reasoning_effort: low | medium | high
+  # wire_api: responses   # protocol codex speaks to the gateway
+  # unified_exec: true    # codex experimental unified_exec feature
+  # skip_install: false   # set true if the image already has codex baked in
+  # run_timeout: 18000    # the session runs detached from the exec websocket, so it may exceed the 4h connection cap
+  # stall_timeout: 1800   # kill codex after this many seconds without a write to its event log (0 = off)
+  # Override codex's built-in system prompt with a file, wired via codex's
+  # ``model_instructions_file`` (which *replaces* the built-in instructions).
+  # Leave unset to keep codex's default prompt. A ready-made prompt that mirrors
+  # codex's own default (usable as a starting point to tweak) ships at:
+  # instruction_path: src/mimoagent/agents/blackbox/resources/codex.md
+
+environment:
+  cwd: "/testbed"
+  timeout: 300
+  cpu_request: "2"
+  memory_request: "8Gi"
+  environment_class: kubernetes
+  # When the pod needs an egress proxy (e.g. generic-dataset runs that clone
+  # from GitHub), forward it here; keep the gateway host in no_proxy so codex
+  # reaches it directly:
+  # env:
+  #   HTTP_PROXY: http://proxy.example.com:3128
+  #   HTTPS_PROXY: http://proxy.example.com:3128
+  #   NO_PROXY: localhost,127.0.0.1,.svc.cluster.local
+
+# Codex authenticates / routes through this same block. The provider prefix is
+# stripped before it reaches codex (openai/gpt-5.5 → gpt-5.5).
+model:
+  model_name: "gpt-5.5"
+  model_kwargs:
+    base_url: "${OPENAI_BASE_URL:-https://api.openai.com}"
+    api_key: "${OPENAI_API_KEY:-}"

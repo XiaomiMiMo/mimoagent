@@ -1,0 +1,32 @@
+# Run OpenClaw (2026.7.1-2 pinned) as a MiMo Agent harness, selected by
+# ``agent.type: openclaw``. The payload ships the npm app tree + a pinned
+# node 24 (no npm in the pod). One local agent turn per task via
+# ``openclaw agent --local --json``; the JSON envelope lands in
+# ``openclaw.txt``. Non-coding tools (messaging/web/canvas/...) are denied in
+# the staged config so trajectories stay repo-focused.
+#
+# The payload carries a build-time whitelist patch (see
+# harness_payloads/build_harness_payloads.sh): upstream's adaptive/xhigh model regexes predate
+# claude-opus-5 and would clamp xhigh/max to budget thinking. Verified on the
+# an Anthropic-compatible gateway serving claude-opus-5: adaptive + effort xhigh on the wire,
+# signature replay, cache hits.
+use_dataset_env: true
+
+agent:
+  type: openclaw
+  version: 2026.7.1-2
+  thinking: xhigh         # off|minimal|low|medium|high|xhigh|adaptive|max
+  context_limit: 1000000
+  output_limit: 65536     # request max_tokens (also the thinking-budget ceiling)
+  # skip_install: false
+
+environment:
+  cwd: "/testbed"
+  timeout: 300
+  environment_class: kubernetes
+
+model:
+  model_name: "claude-opus-5"
+  model_kwargs:
+    base_url: "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"
+    api_key: "${ANTHROPIC_API_KEY:-}"

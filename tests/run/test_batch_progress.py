@@ -1,7 +1,7 @@
 import pytest
 import yaml
 
-from minisweagent.run.extra.utils.batch_progress import RunBatchProgressManager, _shorten_str
+from mimoagent.run.extra.utils.batch_progress import RunBatchProgressManager, _shorten_str
 
 
 @pytest.fixture

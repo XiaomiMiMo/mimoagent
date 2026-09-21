@@ -1,0 +1,39 @@
+# Run the DeepSeek Harness (dsh 0.1.0-rc.6 pinned) as a MiMo Agent harness,
+# selected by ``agent.type: dsh``. The payload ships the installed plugin tree
+# (~60 packages) + a pinned node 22; no npm in the pod. One task per run via
+# ``dsh --profile headless``, and the staged ``--patch`` overlay is what points
+# the harness at the gateway and switches off just two rows: the session-title
+# LLM call (not part of the task) and user-questions (no user in a pod) —
+# 25 wire tools, subagents/goals/plan/skills/web included.
+#
+# The LLM layer is pi-ai (same SDK as pi/omp): the built-in ``anthropic``
+# catalog route already knows claude-opus-5, so overriding just its baseURL
+# keeps the adaptive-thinking facts and ``effort: xhigh|max`` lands on the wire
+# as thinking:{type:adaptive} + output_config.effort. Verified against a
+# captured request body: signed thinking replays on the second turn and
+# cache_control gets 3 breakpoints.
+#
+# The payload carries two build-time patches (see harness_payloads/build_harness_payloads.sh):
+# the launcher's file watchers are removed, and the headless runner learns to
+# resume $DSH_SESSION_ID so multi-turn works at all.
+use_dataset_env: true
+
+agent:
+  type: dsh
+  version: 0.1.0-rc.6
+  effort: xhigh           # off|minimal|low|medium|high|xhigh|max; unset = no reasoning
+  context_limit: 1000000  # modelOverrides.contextWindow
+  output_limit: 65536     # modelOverrides.maxTokens → request max_tokens
+  # extra_rows: []        # extra --patch rows; a row's config REPLACES upstream's
+  # skip_install: false
+
+environment:
+  cwd: "/testbed"
+  timeout: 300
+  environment_class: kubernetes
+
+model:
+  model_name: "claude-opus-5"
+  model_kwargs:
+    base_url: "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"
+    api_key: "${ANTHROPIC_API_KEY:-}"

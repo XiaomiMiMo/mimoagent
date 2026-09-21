@@ -1,53 +1,57 @@
 import logging
 import time
 
-import minisweagent.models
-from minisweagent.models.test_models import DeterministicModel, DeterministicModelConfig
+from mimoagent.models import GlobalModelStats
+from mimoagent.models.test_models import DeterministicModel, DeterministicModelConfig
 
 
-def test_basic_functionality_and_cost_tracking(reset_global_stats):
-    """Test basic model functionality, cost tracking, and default configuration."""
-    model = DeterministicModel(outputs=["Hello", "World"])
+def test_basic_functionality_and_token_tracking():
+    """Test basic model functionality, token tracking, and default configuration."""
+    stats = GlobalModelStats()
+    model = DeterministicModel(outputs=["Hello", "World"], shared_stats=stats)
 
-    # Test first call with defaults
     assert model.query([{"role": "user", "content": "test"}]) == {"content": "Hello"}
     assert model.n_calls == 1
-    assert model.cost == 1.0
-    assert minisweagent.models.GLOBAL_MODEL_STATS.n_calls == 1
-    assert minisweagent.models.GLOBAL_MODEL_STATS.cost == 1.0
+    assert model.token_stats.input_tokens == model.config.tokens_per_call
+    assert stats.n_calls == 1
 
-    # Test second call and sequential outputs
     assert model.query([{"role": "user", "content": "test"}]) == {"content": "World"}
     assert model.n_calls == 2
-    assert model.cost == 2.0
-    assert minisweagent.models.GLOBAL_MODEL_STATS.n_calls == 2
-    assert minisweagent.models.GLOBAL_MODEL_STATS.cost == 2.0
+    assert stats.n_calls == 2
 
 
-def test_custom_cost_and_multiple_models(reset_global_stats):
-    """Test custom cost configuration and global tracking across multiple models."""
-    model1 = DeterministicModel(outputs=["Response1"], cost_per_call=2.5)
-    model2 = DeterministicModel(outputs=["Response2"], cost_per_call=3.0)
+def test_multiple_models_share_injected_stats():
+    """An injected aggregator accumulates calls across model instances."""
+    stats = GlobalModelStats()
+    model1 = DeterministicModel(outputs=["Response1"], shared_stats=stats)
+    model2 = DeterministicModel(outputs=["Response2"], shared_stats=stats)
 
     assert model1.query([{"role": "user", "content": "test"}]) == {"content": "Response1"}
-    assert model1.cost == 2.5
-    assert minisweagent.models.GLOBAL_MODEL_STATS.cost == 2.5
-
     assert model2.query([{"role": "user", "content": "test"}]) == {"content": "Response2"}
-    assert model2.cost == 3.0
-    assert minisweagent.models.GLOBAL_MODEL_STATS.cost == 5.5
-    assert minisweagent.models.GLOBAL_MODEL_STATS.n_calls == 2
+    assert stats.n_calls == 2
+
+
+def test_models_without_injected_stats_are_isolated():
+    """Without injection, models share no aggregator state."""
+    stats = GlobalModelStats()
+    model_with = DeterministicModel(outputs=["A"], shared_stats=stats)
+    model_without = DeterministicModel(outputs=["B"])
+
+    assert model_with.query([{"role": "user", "content": "test"}]) == {"content": "A"}
+    assert model_without.query([{"role": "user", "content": "test"}]) == {"content": "B"}
+    assert stats.n_calls == 1
+    assert model_without.n_calls == 1
 
 
 def test_config_dataclass():
     """Test DeterministicModelConfig with custom values."""
-    config = DeterministicModelConfig(outputs=["Test"], model_name="custom", cost_per_call=5.0)
+    config = DeterministicModelConfig(outputs=["Test"], model_name="custom", tokens_per_call=42)
 
-    assert config.cost_per_call == 5.0
+    assert config.tokens_per_call == 42
     assert config.model_name == "custom"
 
     model = DeterministicModel(**config.__dict__)
-    assert model.config.cost_per_call == 5.0
+    assert model.config.tokens_per_call == 42
 
 
 def test_sleep_and_warning_commands(caplog):

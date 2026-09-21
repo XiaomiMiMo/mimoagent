@@ -1,0 +1,6 @@
+- Fast file pattern matching tool that works with any codebase size
+- Supports glob patterns like "**/*.js" or "src/**/*.ts"
+- Returns up to 100 matching file paths, ordered by modification time (newest first)
+- When more than 100 files match, the 100 kept are the first in path order, so narrow the pattern or pass a `path` instead of relying on this tool to surface the most recently changed file in a large tree
+- Use this tool when you need to find files by name patterns
+- You have the capability to call multiple tools in a single response. It is always better to speculatively perform multiple searches as a batch that are potentially useful.

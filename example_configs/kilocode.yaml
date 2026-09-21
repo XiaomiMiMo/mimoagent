@@ -1,0 +1,43 @@
+# Run Kilo Code CLI (7.4.22 pinned) as a MiMo Agent harness, selected by
+# ``agent.type: kilocode``. Kilo is an opencode fork, so the config/provider
+# block and the NDJSON event log are the same shape — see example_configs/
+# opencode.yaml for the sibling arm. Payload is upstream's bun-compiled
+# standalone binary (the ``-baseline`` linux-x64 build: the plain build needs
+# AVX2 and ``-musl`` dies on glibc pods). Headless via ``kilo run --format
+# json``; the event log is copied out to ``kilocode.txt``.
+#
+# Verified end-to-end against an Anthropic-compatible gateway serving claude-opus-5: adaptive
+# thinking + output_config.effort on the wire (no whitelist patch needed,
+# unlike opencode/openclaw), signed thinking blocks replayed across turns,
+# cache_read hits on later requests, and one request per step_finish (no extra
+# LLM calls). Also verified in a sealed netns with no egress at all.
+#
+# NOTE: kilo's default 12-tool set includes the exact name "todowrite", which
+# that channel rejects outright (400 "Third-party apps..."). The adapter denies
+# todowrite/todoread by default (``todo_tool: false``) — 11 tools on the wire,
+# and the full set really does fail the whole turn.
+use_dataset_env: true
+
+agent:
+  type: kilocode
+  version: 7.4.22
+  thinking_effort: xhigh  # adaptive + effort, via --variant
+  context_limit: 1000000
+  output_limit: 65536     # >32000 is unlocked via KILO_EXPERIMENTAL_OUTPUT_TOKEN_MAX
+  # thinking_budget: 8192   # budget mode, mutually exclusive with thinking_effort
+  # todo_tool: false        # true restores todowrite (gateways without the fingerprint)
+  # session_title: mimo-rollout  # any non-empty value suppresses the title LLM call
+  # project_config: false   # true honours the graded repo's AGENTS.md / ./kilo.json,
+  #                         # at the cost of letting the repo append to the system prompt
+  # skip_install: false
+
+environment:
+  cwd: "/testbed"
+  timeout: 300
+  environment_class: kubernetes
+
+model:
+  model_name: "claude-opus-5"
+  model_kwargs:
+    base_url: "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"
+    api_key: "${ANTHROPIC_API_KEY:-}"

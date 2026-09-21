@@ -1,0 +1,42 @@
+# Run NousResearch Hermes Agent (v2026.8.13 pinned, wire behaviour re-verified on it) as a MiMo Agent harness,
+# selected by ``agent.type: hermes``. Python app: the payload ships a
+# standalone CPython 3.12 venv built at /opt/mimo-hermes (with the mandatory
+# [anthropic] extra) plus the source tree it is installed editable from —
+# 0.20.1 refuses wheel builds outside Nix — plus a static rg. Headless via ``chat -Q --yolo``; the
+# final reply + session diagnostics land in ``hermes.txt``, usage comes from
+# the pod-local state.db.
+#
+# The payload carries a build-time patch (see harness_payloads/build_harness_payloads.sh):
+# upstream strips ALL historic thinking blocks for gateways whose URL lacks
+# "anthropic.com"; HERMES_FORCE_NATIVE_ANTHROPIC=1 (set by the adapter)
+# restores signed-thinking replay. Verified against a gateway serving claude-opus-5
+# channel: adaptive + effort xhigh on the wire, cache hits (4 breakpoints).
+use_dataset_env: true
+
+agent:
+  type: hermes
+  version: 2026.8.13
+  effort: xhigh           # minimal..high | xhigh | max; unset = no thinking field
+  max_tokens: 65536       # unset uses hermes's model table (128000 for opus-5)
+  # max_turns: 90         # tool-calling iterations per turn (upstream default)
+  # toolsets: "terminal,file,todo,code_execution,delegation,debugging,memory,context_engine,clarify"
+  #                       # default (11 tools, delegate_task + clarify included);
+  #                       # session_search / skills / cronjob stay out because
+  #                       # that combination trips the subscription channel's
+  #                       # third-party fingerprint (400)
+  # clarify_timeout: 5    # seconds clarify waits before telling the model to
+  #                       # decide for itself. hermes is the one harness whose
+  #                       # yolo does NOT cover the ask tool, so this is the only
+  #                       # bound on the stall (its own default is 120s)
+  # skip_install: false
+
+environment:
+  cwd: "/testbed"
+  timeout: 300
+  environment_class: kubernetes
+
+model:
+  model_name: "claude-opus-5"
+  model_kwargs:
+    base_url: "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"
+    api_key: "${ANTHROPIC_API_KEY:-}"

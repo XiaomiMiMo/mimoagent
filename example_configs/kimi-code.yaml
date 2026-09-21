@@ -1,0 +1,31 @@
+# Run Moonshot Kimi Code (0.36.1 pinned, wire behaviour re-verified on it) as a MiMo Agent harness, selected by
+# ``agent.type: kimi-code``. The payload bundles a pinned node runtime + the
+# self-contained CLI bundle + a static rg; --prompt headless mode is inherently
+# fully-auto. The stream-json event log is copied out to ``kimi-code.txt``.
+#
+# Verified against an Anthropic-compatible gateway serving claude-opus-5: adaptive thinking +
+# output_config.effort (full low..xhigh/max ladder), signatures replay,
+# prompt caching hits. ``thinking_keep`` stays "off" so requests remain plain
+# /v1/messages (no kimi context-management beta).
+use_dataset_env: true
+
+agent:
+  type: kimi-code
+  version: 0.36.1
+  thinking: true
+  effort: xhigh           # low | medium | high | xhigh | max (default high)
+  context_limit: 1000000  # model max_context_size
+  output_limit: 65536     # model max_output_size → request max_tokens
+  # thinking_keep: "off"  # anything else re-enables the ?beta=true wire
+  # skip_install: false
+
+environment:
+  cwd: "/testbed"
+  timeout: 300
+  environment_class: kubernetes
+
+model:
+  model_name: "claude-opus-5"
+  model_kwargs:
+    base_url: "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"
+    api_key: "${ANTHROPIC_API_KEY:-}"

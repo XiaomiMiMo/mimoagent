@@ -4,90 +4,92 @@ build-backend = "setuptools.build_meta"
 
 
 [project]
-name = "mini-swe-agent"
+name = "mimoagent"
 dynamic = ["version"]
-description = "Nano SWE Agent - A simple AI software engineering agent"
+description = "MiMo Agent: an agent framework connecting coding agents, models, execution environments, datasets and reward"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = "==3.12.*"
 license = {file = "LICENSE.md"}
-keywords = ["nlp", "agents", "code"]
+keywords = ["agents", "llm", "swe-bench", "code", "reinforcement-learning"]
 authors = [
-    {name = "Kilian Lieret", email = "kilian.lieret@posteo.de" },
-    {name = "Carlos E. Jimenez", email = "carlosej@princeton.edu" },
+    {name = "Xiaomi MiMo Team"},
 ]
 
-# Classifiers help users find your project by categorizing it.
 classifiers = [
-  # How mature is this project? Common values are
-  #   3 - Alpha, 4 - Beta, 5 - Production/Stable
   "Development Status :: 3 - Alpha",
-  "Operating System :: OS Independent",
-  # Indicate who your project is intended for
+  "Operating System :: POSIX :: Linux",
   "Intended Audience :: Developers",
-  # Pick your license as you wish
+  "Intended Audience :: Science/Research",
   "License :: OSI Approved :: MIT License",
-  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Software Development",
 ]
 
 dependencies = [
-    "pyyaml",
-    "requests",
-    "jinja2",
-    "litellm >= 1.75.5",  # want to have gpt-5 support
-    "tenacity",
-    "rich",
-    "python-dotenv",
-    "typer",
-    "platformdirs",
-    "textual",
-    "prompt_toolkit",
+    "pyyaml>=6.0.3",
+    "requests>=2.34.2",
+    "jinja2>=3.1.6",
+    "openai==3.3.1",
+    "anthropic==1.0.0",
+    "tenacity>=9.1.4",
+    "rich==15.*",
+    "python-dotenv>=1.2.3",
+    "typer==0.27.*",
+    "platformdirs>=4.4.0",
+    "kubernetes==36.0.3",
+    "xxhash>=3.5.0",
+    "datasets>=3.0.0",
 ]
 
 [project.optional-dependencies]
-full = [
-    "mini-swe-agent[dev]",
-    "swe-rex>=1.4.0",
+cube = [
+    "cubesandbox==0.6.*",
+]
+modal = [
+    "modal==1.5.*",
+]
+ray = [
+    "ray>=2.40.0",
 ]
 
+[dependency-groups]
 dev = [
-    "datasets",
     "pytest",
     "pytest-cov",
     "pytest-asyncio",
     "pytest-xdist",
     "pre-commit",
     "ruff",
-    "mkdocs-include-markdown-plugin",
-    "mkdocstrings[python]>=0.18",
-    "mike",
-    "mkdocs-material",
-    "mkdocs-glightbox",
 ]
 
 [project.urls]
-Documentation = "https://mini-swe-agent.com/latest/"
-Repository = "https://github.com/SWE-agent/mini-SWE-agent"
-"Bug Tracker" = "https://github.com/SWE-agent/mini-SWE-agent/issues"
+Repository = "https://github.com/XiaomiMiMo/mimoagent"
+"Bug Tracker" = "https://github.com/XiaomiMiMo/mimoagent/issues"
+Changelog = "https://github.com/XiaomiMiMo/mimoagent/blob/main/CHANGELOG.md"
 
 [project.scripts]
-mini = "minisweagent.run.mini:app"
-mini-swe-agent = "minisweagent.run.mini:app"
-mini-extra = "minisweagent.run.mini_extra:main"
-mini-e= "minisweagent.run.mini_extra:main"
+mimoagent = "mimoagent.run.extra.batch:app"
 
 [tool.setuptools]
 include-package-data = true
 
 [tool.setuptools.dynamic]
-version = {attr = "minisweagent.__version__"}
+version = {attr = "mimoagent.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["minisweagent*"]
+include = ["mimoagent*"]
 
 [tool.setuptools.package-data]
-minisweagent = ["config/**/*"]
+mimoagent = [
+    "py.typed",
+    "agents/mimocode/prompts/*.txt",
+    "agents/codex/prompts/*.txt",
+    "agents/blackbox/resources/*",
+    "tools/mimocode/*.txt",
+]
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
@@ -118,16 +120,12 @@ exclude = [
     "node_modules",
     "site-packages",
     "venv",
-    # ---- project specific ----
-    "tests/test_data",
-    # Exclude commands so they don't get the __future__ imports
-    "config/commands",
 ]
 
 line-length = 120
 indent-width = 4
 
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
@@ -220,6 +218,22 @@ unfixable = []
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
+[tool.ruff.lint.per-file-ignores]
+# These modules build POSIX path strings for *remote* filesystems (pods,
+# sandboxes, containers) or shell commands, where pathlib's host semantics do
+# not apply; the pathlib rules stay on for everything else.
+"src/mimoagent/environments/kubernetes.py" = ["PTH"]
+"src/mimoagent/environments/cube.py" = ["PTH"]
+"src/mimoagent/environments/modal.py" = ["PTH"]
+"src/mimoagent/environments/docker.py" = ["PTH"]
+"src/mimoagent/environments/local.py" = ["PTH"]
+"src/mimoagent/environments/datasets/*.py" = ["PTH"]
+"src/mimoagent/tools/edit.py" = ["PTH"]
+"src/mimoagent/tools/cc/edit.py" = ["PTH"]
+"tests/environments/test_cube.py" = ["PTH"]
+"tests/environments/test_modal.py" = ["PTH"]
+"scripts/*.py" = ["PTH"]
+
 [tool.ruff.format]
 # Like Black, use double quotes for strings.
 quote-style = "double"
@@ -233,30 +247,10 @@ skip-magic-trailing-comma = false
 # Like Black, automatically detect the appropriate line ending.
 line-ending = "auto"
 
-[tool.typos.default.extend-identifiers]
-# *sigh* this just isn't worth the cost of fixing
-ACI = "ACI"
-
-[tool.typos.default.extend-words]
-# Don't correct the surname "Teh"
-aci = "aci"
-ba = "ba"
-
-[tool.pylint.messages_control]
-disable = [
-    "line-too-long",           # C0301 - disable line length checks
-    "missing-docstring",       # C0111 - disable docstring requirements
-    "missing-class-docstring", # C0115 - disable class docstring requirements
-    "missing-function-docstring", # C0116 - disable function docstring requirements
-    "missing-module-docstring", # C0114 - disable module docstring requirements
-    "unspecified-encoding",    # W1514 - disable unspecified encoding warnings
-    "duplicate-code",          # R0801 - disable code duplication checks
-    "too-few-public-methods",  # R0903 - disable too few public methods warnings
-]
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "slow: marks tests as slow (deselect with '-k \"not slow\"')",
+    "integration: needs an external service (docker daemon, CubeSandbox, Modal, network); deselect with '-m \"not integration\"'",
 ]

@@ -1,0 +1,35 @@
+# Run Moonshot Kimi CLI (1.49.0 pinned) as a MiMo Agent harness, selected by
+# ``agent.type: kimi-cli``. Python app: the payload ships a standalone CPython
+# 3.12 venv built at /opt/mimo-kimi-cli plus a static rg. Runs headless via
+# ``--print`` (yolo is forced in the staged config). Events land in
+# ``kimi-cli.txt``; per-call usage comes from the session's wire.jsonl.
+#
+# The payload carries two build-time patches (see harness_payloads/build_harness_payloads.sh):
+# kosong treats opus-5/fable as adaptive-thinking models and accepts xhigh,
+# and the effort level is read from $KIMI_CLI_THINKING_EFFORT. Verified on
+# an Anthropic-compatible gateway serving claude-opus-5: adaptive + effort xhigh on the wire,
+# signature replay, cache hits. Note: no max-output knob exists in 1.49.0
+# (upstream's anthropic path hardcodes max_tokens=50000; the payload patch
+# reads $KIMI_CLI_MAX_TOKENS instead).
+use_dataset_env: true
+
+agent:
+  type: kimi-cli
+  version: 1.49.0
+  thinking: true
+  effort: xhigh           # high (upstream default) | xhigh | max — via payload patch
+  context_limit: 1000000  # model max_context_size
+  output_limit: 65536     # request max_tokens (payload patch; upstream pins 50000)
+  # max_steps_per_turn: 1000
+  # skip_install: false
+
+environment:
+  cwd: "/testbed"
+  timeout: 300
+  environment_class: kubernetes
+
+model:
+  model_name: "claude-opus-5"
+  model_kwargs:
+    base_url: "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"
+    api_key: "${ANTHROPIC_API_KEY:-}"
