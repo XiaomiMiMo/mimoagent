@@ -1,7 +1,3 @@
-"""Unit tests for the git leak-prevention modes (``git_leak_prevention``):
-hide / strip (with hide fallback) / none, plus the restore↔re-hide lifecycle
-around ``calculate_reward``."""
-
 import pytest
 
 from mimoagent.environments.datasets import create_from_registry
@@ -61,7 +57,6 @@ def test_hide_mode_moves_git_to_random_stash():
     assert env._git_hidden
     assert env._git_stash_path is not None
     assert f"mv {env.repo_path}/.git {env._git_stash_path}" in _joined(env)
-    # no strip attempted
     assert "gc --prune=now" not in _joined(env)
 
 
@@ -70,14 +65,14 @@ def test_strip_mode_success_does_not_hide():
     env._prevent_git_hack()
     joined = _joined(env)
     assert "gc --prune=now" in joined
-    assert "COMMIT_COUNT" in joined  # verify script ran
+    assert "COMMIT_COUNT" in joined
     assert not env._git_hidden
     assert env._git_stash_path is None
 
 
 def test_strip_falls_back_to_hide_when_verify_fails():
     env = _env("strip")
-    env.env.rules = [("COMMIT_COUNT", 1)]  # verify script fails
+    env.env.rules = [("COMMIT_COUNT", 1)]
     env._prevent_git_hack()
     assert env._git_hidden
     assert f"mv {env.repo_path}/.git" in _joined(env)
@@ -133,15 +128,14 @@ def test_calculate_reward_restores_then_rehides():
     joined = _joined(env)
     restore_idx = joined.index(f"mv {stash} {env.repo_path}/.git")
     rehide_idx = joined.index(f"mv {env.repo_path}/.git {stash}")
-    assert restore_idx < rehide_idx  # restore before grading, re-hide after
-    assert env._git_hidden  # ends hidden, ready for recalc
-    # stash path is stable across the cycle
+    assert restore_idx < rehide_idx
+    assert env._git_hidden
     assert env._git_stash_path == stash
 
 
 def test_calculate_reward_skips_git_lifecycle_when_not_hidden():
     env = _env("strip")
-    env._prevent_git_hack()  # strip succeeds → no hide lifecycle
+    env._prevent_git_hack()
     env.env.commands.clear()
     reward, _, _ = env.calculate_reward()
     assert reward == 1.0

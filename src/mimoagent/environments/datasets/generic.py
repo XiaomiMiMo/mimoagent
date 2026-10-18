@@ -6,9 +6,6 @@ import time
 from mimoagent import Environment
 from mimoagent.environments.datasets.base import DatasetEnvironment
 
-# Answer/verifier leftovers that converted test-case images bake in; removed at
-# setup so the doer can't read the gold fix, the hidden tests, or how the image
-# was graded. Harmless on freshly cloned repos (the paths simply don't exist).
 _LEAK_PATHS = ("/tmp/patch.diff", "/tmp/test_patch.diff", "/tmp/test_files.json", "/tests", "/logs")
 
 
@@ -20,11 +17,7 @@ class GenericGitEnvironment(DatasetEnvironment):
     ``base_commit`` when present. Instances without ``git_url`` ship the
     repository baked into the docker image — the clone is skipped and only the
     reset runs (no ``git clean``: images may ship prebuilt untracked artifacts
-    the build needs). Setup then scrubs the answer/verifier leftovers such
-    images bake in (``.build_env``, ``/tmp/patch.diff``, ``/tmp/test_patch.diff``,
-    ``/tmp/test_files.json``, ``/tests``, ``/logs``) and, whenever a
-    ``base_commit`` is pinned, runs git leak prevention so ``git log`` can't
-    hand the doer the fix (``git_leak_prevention: none`` in the yaml opts out).
+    the build needs).
 
     There is no programmatic verifier (``HAS_VERIFIER = False``). Reward comes
     from the rubric judge when the instance carries ``rubric.rubrics`` and the
@@ -90,12 +83,6 @@ class GenericGitEnvironment(DatasetEnvironment):
             )
 
     def _remove_leak_paths(self) -> None:
-        """Delete ``.build_env`` and the baked-in gold/verifier files.
-
-        Non-fatal: most images don't ship all of them, and ``rm -rf`` on a
-        missing path already succeeds — a failure here only means the doer
-        might see them.
-        """
         paths = [f"{self.repo_path}/.build_env", *_LEAK_PATHS]
         try:
             res = self.execute("rm -rf " + " ".join(shlex.quote(p) for p in paths))

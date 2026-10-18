@@ -349,10 +349,6 @@ def process_instance(
 
         try:
             env_config = config.get("environment", {}).copy()
-            # anti_hack_cleanup / git_leak_prevention / judge_agent / reward_mode
-            # live in the yaml ``environment`` block. make_dataset_env captures
-            # them as keyword parameters so they never reach env_kwargs (where
-            # filter_env_kwargs would drop them); when absent, class defaults apply.
             env = make_dataset_env(instance, **env_config)
             log.info(f"Dataset Environment: {type(env)}")
             log.info(f"Environment Config: {env.env.config}")

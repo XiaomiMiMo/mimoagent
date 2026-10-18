@@ -6,8 +6,7 @@ This project is distributed under the MIT License (see LICENSE.md).
 Provenance
 ----------
 mimoagent is a fork of mini-swe-agent version 1.9.0
-(https://github.com/SWE-agent/mini-swe-agent, upstream commit b3d50788,
-2025-08-17), Copyright (c) 2025 Kilian A. Lieret and Carlos E. Jimenez,
+(https://github.com/SWE-agent/mini-swe-agent), Copyright (c) 2025 Kilian A. Lieret and Carlos E. Jimenez,
 licensed under the MIT License. The package was renamed from `minisweagent`
 to `mimoagent`; the agent loop, model adapters, environments, datasets and
 tooling have since been substantially rewritten and extended. The original

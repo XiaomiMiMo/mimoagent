@@ -41,16 +41,6 @@ fail with "already exists in working directory", which is a reward of 0 that
 the model did not earn. Failures in steps 1 and 2 are reported with
 ``error_category`` so the trainer can separate a broken testbed from a wrong
 answer.
-
-Expectations on the image (none of these are checked beyond the cheap history
-assertion in setup, because they are build-time properties):
-
-* the working tree is already in the task state, so no reset is needed;
-* git history is truncated at the task's base commit, with branches, remotes,
-  newer tags, reflog and unreachable objects removed — otherwise the agent can
-  read the reference fix out of ``git log``;
-* no verifier, test file or task specification is left anywhere on disk;
-* language toolchains are on ``PATH`` with their environment exported.
 """
 
 from __future__ import annotations
@@ -81,16 +71,8 @@ class OpenSourceCodeEnvironment(DatasetEnvironment):
     HAS_VERIFIER = True
 
     _ANTI_HACK_CLEANUP_DEFAULT = False
-    """The build-env purges exist for images that ship build residue. Images for
-    this dataset are expected to be clean already; a run against images that are
-    not can switch this on with the yaml ``anti_hack_cleanup`` key."""
 
     _GIT_LEAK_PREVENTION_DEFAULT = "none"
-    """History truncation is a build-time property of the image, so there is
-    nothing to strip at rollout time. Setup still asserts the property holds --
-    see :meth:`_assert_history_truncated`. A run against untruncated images can
-    fall back to ``git_leak_prevention: strip`` in the yaml, which does the
-    stripping in-pod at the cost of one garbage collection per rollout."""
 
     _TEST_PATCH_REMOTE = "/tmp/_opensource_code_test.patch"
 
@@ -121,6 +103,7 @@ class OpenSourceCodeEnvironment(DatasetEnvironment):
         self.git_add_safe_directory()
         self._ensure_work_tree()
         self._base_ref = self._capture_base_ref()
+        self._purge_git_history()
         self._assert_history_truncated()
 
     def _ensure_work_tree(self) -> None:
@@ -153,20 +136,40 @@ class OpenSourceCodeEnvironment(DatasetEnvironment):
             )
         return ref
 
+    _PURGE_GIT_HISTORY = """set -e
+base={base}
+gd=$(git rev-parse --git-dir)
+for r in $(git remote); do git remote remove "$r"; done
+(cd "$gd" && find refs -type f) | git cat-file --batch-check | awk '$2 == "missing" {{print $1}}' |
+  while read -r ref; do rm -f "$gd/$ref"; done
+git for-each-ref --format='%(refname)' | while read -r ref; do
+  case "$ref" in
+    refs/heads/*|refs/tags/*) git merge-base --is-ancestor "$ref" "$base" 2>/dev/null && continue ;;
+  esac
+  echo "delete $ref"
+done | git update-ref --no-deref --stdin
+rm -rf "$gd/logs" "$gd/worktrees"
+rm -f "$gd/ORIG_HEAD" "$gd/FETCH_HEAD" "$gd/MERGE_HEAD" "$gd/CHERRY_PICK_HEAD" "$gd/REVERT_HEAD" \\
+  "$gd/AUTO_MERGE" "$gd"/objects/pack/*.keep
+git -c gc.pruneExpire=now -c gc.reflogExpire=now -c gc.reflogExpireUnreachable=now \\
+  -c gc.cruftPacks=false gc --prune=now --quiet
+remotes=$(git remote | wc -l)
+extra=$(git rev-list --all --not "$base" | wc -l)
+odb=$(git cat-file --batch-all-objects --batch-check='%(objecttype)' | grep -c '^commit$' || true)
+reachable=$(git rev-list --all | wc -l)
+echo "remotes=$remotes extra=$extra odb_commits=$odb reachable_commits=$reachable"
+test "$remotes" -eq 0 && test "$extra" -eq 0 && test "$odb" -eq "$reachable"
+"""
+
+    def _purge_git_history(self) -> None:
+        res = self.execute(self._PURGE_GIT_HISTORY.format(base=self._base_ref), cwd=self.repo_path, timeout=1800)
+        if res.get("returncode", 1) != 0:
+            raise RuntimeError(
+                f"{self.instance_id}: git history purge failed at {self.repo_path} "
+                f"(rc={res.get('returncode')}): {str(res.get('output'))[-1000:]}"
+            )
+
     def _assert_history_truncated(self) -> None:
-        """Fail setup if any commit outside the base ref's ancestry is reachable.
-
-        The reference fix usually lives in a commit made after the base: on a
-        branch tip, a remote-tracking ref, or a release tag. If the image was
-        built without truncating the history, the agent can read the answer out
-        of ``git log`` and the resulting scores are meaningless -- a failure
-        worth aborting on rather than discovering later in the metrics.
-
-        ``rev-list --all --not <base>`` answers this directly. The alternative
-        of comparing commit timestamps needs GNU ``date`` and mis-sorts
-        timezone-suffixed dates, which is how a release tag carrying the fix
-        survived an earlier version of this check elsewhere in the codebase.
-        """
         res = self.execute(
             f"git rev-list --all --not {self._base_ref} | head -n 5",
             cwd=self.repo_path,
@@ -179,16 +182,19 @@ class OpenSourceCodeEnvironment(DatasetEnvironment):
         extra_commits = [line for line in str(res.get("output") or "").split() if len(line) == 40]
         if extra_commits:
             raise RuntimeError(
-                f"{self.instance_id}: image git history is not truncated at {self._base_ref[:12]}; "
-                f"commits outside its ancestry are reachable (e.g. {extra_commits[:3]}). "
-                f"Rebuild the image with the history truncated, or set "
-                f"git_leak_prevention: strip to truncate it per rollout."
+                f"{self.instance_id}: git history is not truncated at {self._base_ref[:12]}; "
+                f"commits outside its ancestry are reachable (e.g. {extra_commits[:3]})."
             )
 
     # --- reward ---------------------------------------------------------------
 
+    _GIT_WITHOUT_HOOKS = 'git() { command git -c core.hooksPath=/dev/null "$@"; }\n'
+
     def _reset_test_files(self) -> dict:
-        return self.reset_test_files_to_base(self._test_patch, self._base_ref)
+        cmd = self.build_reset_test_files_cmd(self._test_patch, self._base_ref)
+        if cmd is None:
+            return {"returncode": 0, "output": "no test files to reset"}
+        return self.execute(self._GIT_WITHOUT_HOOKS + cmd, cwd=self.repo_path)
 
     def _apply_test_patch(self) -> dict:
         """Copy the patch in as a file and apply it.

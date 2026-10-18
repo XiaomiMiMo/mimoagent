@@ -17,8 +17,7 @@ schema and grades the final environment in place, ready for downstream
 consumption.
 
 `mimoagent` started as a fork of
-[mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) v1.9.0 (commit
-`b3d50788`, August 2025) and has since been largely rewritten; see [NOTICE](NOTICE).
+[mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) v1.9.0 and has since been largely rewritten; see [NOTICE](NOTICE).
 
 ## Installation
 

@@ -73,7 +73,6 @@ For native Claude-style tool calling, use `example_configs/swe_cc_agent.yaml`. F
 - `example_configs/`: profiles for native agents, blackbox agents, model protocols, and environment backends.
 - `tests/`: unit tests for agents, models, tools, environments and batch execution; tests marked `integration` need Docker or an external service and are skipped otherwise.
 - `scripts/`: trajectory collection / conversion utilities, dataset converters, viewers, and the harness payload builder (see `scripts/README.md`).
-- `docs/`: design notes and benchmark notes.
 
 ## Python Toolchain
 

@@ -94,7 +94,6 @@ def test_reset_raises_when_retry_also_fails():
 
 
 def test_setup_scrubs_leak_paths_and_strips_git_history():
-    """Image-baked repos: gold/verifier leftovers go, git leak prevention runs after the reset."""
     base_env = _ResetEnvironment()
     _env(base_env).setup_environment()
 

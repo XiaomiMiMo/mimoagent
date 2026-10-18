@@ -65,10 +65,6 @@ def create_from_registry(
     Low-level constructor used by :func:`mimoagent.environments.utils.make_dataset_env`,
     which is the public entry point (it also builds the base env and detects the type).
 
-    ``anti_hack_cleanup`` (from the yaml ``anti_hack_cleanup`` key) overrides each
-    env's class default for the build-env anti-hack cleanup when not None.
-    ``git_leak_prevention`` (from the yaml ``git_leak_prevention`` key; one of
-    ``GIT_LEAK_PREVENTION_MODES``) overrides the git leak-prevention mode.
     ``judge_agent`` (from the yaml ``judge_agent`` key) is the rubric judge agent
     config; ``reward_mode`` (from the yaml ``reward_mode`` key; one of
     ``REWARD_MODES``) decides whether the judge and/or the dataset's verifier run

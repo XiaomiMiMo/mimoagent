@@ -66,8 +66,6 @@ def make_dataset_env(
     Does not touch the actual env starting process, which is handled by
     dataset_env.setup_environment()
 
-    ``anti_hack_cleanup`` (bool, build-env anti-hack cleanup),
-    ``git_leak_prevention`` ("hide"/"strip"/"none", see base.GIT_LEAK_PREVENTION_MODES),
     ``judge_agent`` (dict, rubric judge agent config — runs on any dataset whose
     instances carry ``rubric.rubrics``), ``reward_mode`` ("auto"/"programmatic"/
     "rubric"/"both", see base.REWARD_MODES) and ``image_prefix`` (registry mirror

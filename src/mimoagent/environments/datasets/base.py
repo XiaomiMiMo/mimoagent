@@ -5,11 +5,9 @@ docker container, ...) with dataset-specific setup and reward calculation.
 Subclasses implement two hooks:
 
 * ``_setup_dataset_specific()`` — prepare the container for the agent run
-  (git hygiene, anti-leak evictions, toolchain paths).
 * ``_do_calculate_reward()`` — materialise the verifier, run it, grade.
 
-The base class owns the cross-cutting concerns: model-patch capture, the
-git leak-prevention lifecycle (strip/hide modes, see ``GIT_LEAK_PREVENTION_MODES``),
+The base class owns the cross-cutting concerns: model-patch capture,
 the optional rubric-judge reward stage (see ``REWARD_MODES`` and
 ``mimoagent.environments.rubric_judge``), TransportError handling, and a
 toolbox of helpers (text transfer, patch-file extraction, git reset) that every
@@ -44,15 +42,6 @@ def parse_git_head_output(output: str) -> str | None:
 
 
 GIT_LEAK_PREVENTION_MODES = ("hide", "strip", "none")
-"""Valid values for the ``git_leak_prevention`` yaml key (environment block):
-
-* ``hide``  — move ``.git`` out of the repo to a random on-pod stash path for
-  the whole agent run; restore it for reward calculation, re-hide after.
-* ``strip`` — strip post-base commits/tags/refs in place (agent keeps a usable
-  ``.git``); if the strip fails verification or errors out, fall back to
-  ``hide``. **Default.**
-* ``none``  — leave ``.git`` untouched.
-"""
 
 REWARD_MODES = ("auto", "programmatic", "rubric", "both")
 """Valid values for the ``reward_mode`` yaml key (environment block). Decides
@@ -93,15 +82,8 @@ class DatasetEnvironment(ABC):
     key (threaded via ``create_from_registry``) overrides this per-run."""
 
     _ANTI_HACK_CLEANUP_DEFAULT = False
-    """Default for the build-env anti-hack cleanup (residue / build artifacts /
-    global caches). OFF globally; a dataset built from committed build-env
-    images can set this True. The yaml ``anti_hack_cleanup`` key (threaded via
-    ``create_from_registry``) overrides this per-run when present."""
 
     _GIT_LEAK_PREVENTION_DEFAULT = "strip"
-    """Default git leak-prevention mode (see ``GIT_LEAK_PREVENTION_MODES``).
-    The yaml ``git_leak_prevention`` key (threaded via ``create_from_registry``)
-    overrides this per-run when present."""
 
     @classmethod
     def default_docker_image(cls, instance: dict) -> str | None:
@@ -122,22 +104,11 @@ class DatasetEnvironment(ABC):
         self.env = base_env
         self.instance = instance
 
-        # Git leak-prevention state. ``_git_stash_path`` is assigned on first
-        # hide (random per-instance path) and marks that the hide lifecycle is
-        # active; ``_git_hidden`` tracks whether .git is currently stashed away.
         self.git_leak_prevention = self._GIT_LEAK_PREVENTION_DEFAULT
         self._git_stash_path: str | None = None
         self._git_hidden = False
-        # Normalised language ("go"/"python"/...) used by the build-artifact
-        # purge to pick which dependency dirs to keep. Instances may carry
-        # "language"; datasets without it get "" → _CLEAN_KEEP_UNKNOWN.
         self._language = (instance.get("language") or "").lower()
-        # Whether to run the build-env anti-hack cleanup after setup. Class
-        # default unless overridden by the yaml flag in create_from_registry.
         self.anti_hack_cleanup = self._ANTI_HACK_CLEANUP_DEFAULT
-        # Idempotency guard: a subclass may call the cleanup at a specific point
-        # inside its own setup (to control ordering). Once run, the
-        # ``setup_environment`` post-hook skips it instead of running it twice.
         self._anti_hack_cleanup_done = False
 
         # Rubric-judge reward stage (see REWARD_MODES). ``rubrics`` is parsed
@@ -183,17 +154,8 @@ class DatasetEnvironment(ABC):
         self.env.start()
         # Then run dataset-specific setup
         self._setup_dataset_specific()
-        # Finally, the shared build-env anti-hack cleanup (gated by yaml flag /
-        # class default). OFF for most datasets. Idempotent: if a subclass already
-        # ran it mid-setup (to control ordering), this skips.
         if self.anti_hack_cleanup:
             self._run_build_env_anti_hack_cleanup()
-        # Answer-leak blocklist: when the environment can reach the public
-        # internet, blackhole the domains that host reference solutions (PR /
-        # patch endpoints of the task's upstream repo) by pointing them at
-        # 0.0.0.0 in /etc/hosts. Applied at the very end of setup so dependency
-        # installation still works and only the rollout is restricted. Fails
-        # closed: a write failure must abort rather than run with the leak open.
         blocklist = getattr(self.env.config, "answer_leak_blocklist", None)
         if blocklist:
             lines = "\\n".join(f"0.0.0.0 {h}" for h in blocklist)
@@ -590,30 +552,11 @@ class DatasetEnvironment(ABC):
         if res.get("returncode", 1) != 0:
             raise RuntimeError(f"Failed to append /usr/local/go to PATH: {res.get('output', '')}")
 
-    # --- Build-env anti-hack cleanup (shared; gated by ``anti_hack_cleanup``) ---
-    #
-    # Three best-effort purges that strip answer-leaking residue baked into a
-    # committed build-env image: build-time logs / verifier output (residue),
-    # compiled artifacts that decompile back to the golden fix (build artifacts),
-    # and the project's own caches living outside the repo (global caches).
-    # Any dataset can opt in via the yaml ``anti_hack_cleanup`` flag.
-    # Repo-relative paths use ``self.repo_path`` (/testbed by default,
-    # deepswe=/app).
-
-    # Global (absolute, repo-agnostic) residue paths. The repo-relative bits
-    # (node_modules caches under repo_path) are appended in _purge_build_residue.
-    # Version/engine agnostic: ``find /var/log -type f -delete`` covers
-    # postgresql-N / mysql / mongodb without hardcoding versions.
     _RESIDUE_SCRUB_GLOBAL = (
         "rm -f /tmp/fail.log /tmp/pass.log /tmp/patch.diff /tmp/test_patch.diff /tmp/*.log 2>/dev/null; "
         "rm -rf /tmp/claude-0 /tmp/claude-* /tmp/testem-* /tmp/puppeteer_dev_chrome_profile-* 2>/dev/null; "
-        # extra /tmp build/verifier residue (test_files.json = hidden-test file list;
-        # jest transform cache holds expected results/snapshots; /tmp/build leftovers).
         "rm -f /tmp/test_files.json 2>/dev/null; "
         "rm -rf /tmp/jest_* /tmp/jest-* /tmp/build /tmp/build_env 2>/dev/null; "
-        # more /tmp verifier residue found by env_hacker audit: pytest tmp projects,
-        # go test build cache, Coverlet (.NET) tmp*.tmp, unpacked toolchains/clones,
-        # editor .bak copies, expect/diff dumps, PHPCS standards git clone.
         "rm -rf /tmp/pytest-of-root /tmp/pytest-* /tmp/.pytest_cache /tmp/__pycache__ 2>/dev/null; "
         "rm -rf /tmp/go-build* /tmp/standards /tmp/wordpress /tmp/zig-* /tmp/testbase /tmp/testbed 2>/dev/null; "
         "rm -f /tmp/tmp*.tmp /tmp/*.bak /tmp/expect* /tmp/butwas* 2>/dev/null; "
@@ -628,33 +571,20 @@ class DatasetEnvironment(ABC):
     )
 
     def _purge_build_residue(self) -> None:
-        """Delete build-time answer-leak residue baked into the image.
-
-        Best-effort: the agent run shouldn't be blocked if scrub partially fails,
-        so we just log. KEEPS .build_env/test_command.sh (only its sibling
-        task_description.md is dropped) — build-env rewards need the test runner.
-        """
-        # Repo-relative build caches inside kept dep dirs (regenerated on demand).
         repo_scrub = f"rm -rf {self.repo_path}/node_modules/.cache {self.repo_path}/node_modules/.vitest 2>/dev/null; "
         try:
             self.env.execute(repo_scrub + self._RESIDUE_SCRUB_GLOBAL, timeout=120)
         except Exception as e:
             self.logger.warning(f"{self.instance_id}: build-residue scrub failed (non-fatal): {repr(e)}")
 
-    # Dirs to KEEP during `git clean -fdx` (offline rebuild needs them). git clean
-    # removes everything else untracked/ignored — including build OUTPUT (maven
-    # target/, gradle build/, dist/, __pycache__, *.class ...) which is what we want
-    # gone. _CLEAN_KEEP_COMMON applies to ALL languages (unambiguous dependency /
-    # tooling dirs that never hold the project's own source answer); per-language
-    # entries add the cache-vs-output-ambiguous dirs (target = rust dep cache, etc.).
     _CLEAN_KEEP_COMMON = [
         "node_modules",
         "bower_components",
-        ".husky",  # js/ts deps + git hooks
+        ".husky",
         "vendor",
         "third_party",
         "_deps",
-        "vcpkg_installed",  # go/php/cmake deps
+        "vcpkg_installed",
     ]
     _CLEAN_KEEP = {
         "python": [".venv", "venv"],
@@ -663,11 +593,10 @@ class DatasetEnvironment(ABC):
         "scala": [".gradle"],
         "rust": ["target"],
         "swift": [".build"],
-        "crystal": ["lib"],  # shards deps
-        "ruby": [".bundle"],  # bundler config / git-source gems (vendor in common)
-        "julia": ["Manifest.toml"],  # resolved-deps manifest (else Pkg.instantiate fails)
+        "crystal": ["lib"],
+        "ruby": [".bundle"],
+        "julia": ["Manifest.toml"],
     }
-    # Fallback for unknown languages: union of all per-language ambiguous dirs.
     _CLEAN_KEEP_UNKNOWN = [
         ".venv",
         "venv",
@@ -682,13 +611,6 @@ class DatasetEnvironment(ABC):
         "dist-newstyle",
     ]
 
-    # Rust: strip the project's OWN compiled crates + test binaries from target/
-    # while keeping third-party crate rlibs in target/*/deps (offline rebuild). The
-    # prior pipeline only deleted the root [package].name; workspaces (e.g. RustPython
-    # with rustpython_vm / rustpython_ast / ... members) leaked the members' rlibs.
-    # Here we enumerate every crate name from all Cargo.toml files and drop them.
-    # The ``cd <repo>`` line is prepended at call time (avoids brace-escaping the
-    # bash ${var} expansions below through str.format).
     _RUST_PURGE_BODY = r"""
 NAMES=$(grep -hoE '^[[:space:]]*name[[:space:]]*=[[:space:]]*"[^"]+"' \
           $(find . -maxdepth 4 -name Cargo.toml 2>/dev/null) 2>/dev/null \
@@ -707,27 +629,17 @@ true
 """
 
     def _purge_build_artifacts(self) -> None:
-        """Remove compiled build artifacts that leak the golden fix / hidden test,
-        keeping the per-language dependency caches needed for an offline rebuild
-        at reward time. Best-effort (never blocks the run)."""
         lang = self._language
         lang_keep = self._CLEAN_KEEP.get(lang, self._CLEAN_KEEP_UNKNOWN)
-        keep = list(dict.fromkeys(self._CLEAN_KEEP_COMMON + lang_keep))  # dedup, keep order
+        keep = list(dict.fromkeys(self._CLEAN_KEEP_COMMON + lang_keep))
         excludes = " ".join(f"--exclude={d}" for d in keep)
         try:
-            # ① git clean: drop untracked/ignored build OUTPUT (target/build/dist/
-            #    __pycache__/*.class ...), keep dep caches via --exclude.
             self.env.execute(f"git clean -fdx {excludes}", cwd=self.repo_path, timeout=300)
-            # ② Rust/Swift: target//.build kept wholesale → strip project crates + tests.
             if lang == "rust":
                 self.env.execute(f"cd {self.repo_path}\n" + self._RUST_PURGE_BODY, timeout=300)
             elif lang == "swift":
                 self.env.execute(f"cd {self.repo_path} && rm -rf .build/*/build 2>/dev/null || true", timeout=120)
-            # ③ Project installed OUTSIDE the repo (git clean can't reach it).
             if lang == "python":
-                # A `pip install .` puts a (fixed) copy of the project into system/
-                # global site-packages, which also shadows the repo at import time.
-                # Overwrite it with an editable link to the base-commit source.
                 self.env.execute(
                     f"pip install -e {self.repo_path} --no-deps --force-reinstall -q 2>/dev/null || true",
                     timeout=300,
@@ -735,16 +647,6 @@ true
         except Exception as e:
             self.logger.warning(f"{self.instance_id}: build-artifact purge failed (non-fatal): {repr(e)}")
 
-    # Answer-leaking artifacts OUTSIDE the repo (git clean can't reach). env_hacker
-    # audit found these are the single biggest leak vector. All are caches that the
-    # build tool regenerates on demand at reward time (cost: recompile/re-precompile).
-    #   - ~/.m2 SNAPSHOT jars: the project's OWN built jar/sources/tests (SNAPSHOT =
-    #     locally built; third-party releases are not SNAPSHOT, so they're kept). poms
-    #     are kept so resolution still works; mvn rebuilds the jar from the repo.
-    #   - ~/.julia/compiled *.ji: golden source strings embedded in precompiled cache.
-    #   - ~/.gradle build-cache (compiled bytecode) + daemon logs (javac warnings leak
-    #     source lines, test reports leak hidden tests) + script/jar caches.
-    #   - ~/.cache/bazel: stale objects + testlogs.
     _GLOBAL_CACHE_SCRUB = (
         "find /root/.m2 -type f \\( -name '*-SNAPSHOT.jar' -o -name '*-SNAPSHOT-sources.jar' "
         "-o -name '*-SNAPSHOT-tests.jar' -o -name '*-SNAPSHOT-test-sources.jar' \\) -delete 2>/dev/null; "
@@ -756,23 +658,12 @@ true
     )
 
     def _purge_global_caches(self) -> None:
-        """Delete answer-leaking caches outside the repo (~/.m2 SNAPSHOT jars,
-        Julia/Gradle/Bazel compile caches). Best-effort; build tools regenerate
-        them at reward time (extra recompile cost)."""
         try:
             self.env.execute(self._GLOBAL_CACHE_SCRUB, timeout=180)
         except Exception as e:
             self.logger.warning(f"{self.instance_id}: global-cache purge failed (non-fatal): {repr(e)}")
 
     def _run_build_env_anti_hack_cleanup(self) -> None:
-        """Run the three build-env anti-hack purges (residue / build artifacts /
-        global caches). Each is individually best-effort. Idempotent: runs at most
-        once per env (guarded by ``_anti_hack_cleanup_done``) so a subclass calling
-        it mid-setup and the ``setup_environment`` post-hook don't double-run it.
-
-        If ``.git`` is currently hidden (hide-mode git leak prevention ran earlier
-        in setup), it is restored for the purge — ``git clean -fdx`` needs it —
-        and re-hidden after."""
         if self._anti_hack_cleanup_done:
             return
         self._anti_hack_cleanup_done = True
@@ -787,27 +678,7 @@ true
             if restore_needed:
                 self._hide_git()
 
-    # --- Git leak prevention ------------------------------------------------------
-
     def _prevent_git_hack(self, cutoff_commit: str | None = None) -> None:
-        """Keep the agent from mining the golden fix out of git history.
-
-        Dispatches on ``self.git_leak_prevention`` (yaml ``git_leak_prevention``,
-        see ``GIT_LEAK_PREVENTION_MODES``):
-
-        * ``hide``  — stash the whole ``.git`` outside the repo for the agent
-          run; :meth:`calculate_reward` restores it for grading.
-        * ``strip`` (default) — strip future commits in place so the agent
-          keeps a usable ``.git``; on strip failure/timeout fall back to
-          ``hide`` (degraded but leak-free) instead of aborting the rollout.
-        * ``none``  — no-op.
-
-        ``cutoff_commit`` overrides the strip point (default: the instance's
-        ``base_commit``). Everything not in the cutoff's ancestry is stripped.
-        some datasets pass the PR HEAD so the PR's own base..head commits (the
-        subject under review) survive while the merge / follow-up fixes are
-        hidden.
-        """
         mode = self.git_leak_prevention
         if mode == "none":
             return
@@ -824,52 +695,13 @@ true
             self._hide_git()
 
     def _strip_future_commits(self, base: str) -> bool:
-        """Strip everything not in ``base``'s ancestry from ``.git``, in place.
-
-        Returns True iff the post-strip verification confirms no post-base
-        commits remain reachable. Never raises — any error (including execute
-        timeouts / transport faults) returns False so the caller can fall back
-        to hiding ``.git``.
-
-        Reference: https://github.com/SWE-bench/SWE-bench/pull/471/files#diff-ffb13d93f3c39cdd17161d974faa704d32d3500f8495a60bfdc31c3c30adf52e
-
-        How the strip works:
-          - ``git checkout --detach {base}`` re-points HEAD onto base FIRST, so
-            a current-branch tip that sits *ahead* of base (the main reason the
-            old verify failed) no longer keeps future commits reachable.
-          - all branches are then deleted (none is current after detach),
-            remotes removed, tags newer than base deleted (old tags kept so
-            ``git describe`` / setuptools_scm-style version detection still
-            works), reflog expired, and ``gc --prune=now`` physically drops the
-            now-unreachable future-commit objects (so ``git --git-dir`` /
-            ``fsck`` / ``cat-file`` can't recover them).
-        """
         cleanup_commands = [
-            # ★ detach HEAD onto base FIRST so the current branch tip (possibly
-            #   ahead of base) doesn't keep future commits reachable.
             f"git checkout --detach {base} 2>/dev/null || true",
-            # delete every local branch (none is current after detach)
             'git for-each-ref --format="%(refname)" refs/heads | while read r; do git update-ref -d "$r" 2>/dev/null; done || true',
             "git remote | xargs -r -n1 git remote remove 2>/dev/null || true",
-            # drop non-branch/tag refs that can keep future commits reachable
-            # (git-replace can even swap base for another commit; notes/stash/pull too).
             'git for-each-ref --format="%(refname)" refs/replace refs/notes refs/stash refs/remotes refs/pull 2>/dev/null | while read r; do git update-ref -d "$r" 2>/dev/null; done || true',
-            # ★ delete every tag whose commit is NOT in base's history. Uses
-            #   `merge-base --is-ancestor` (reliable) instead of comparing %ci
-            #   date strings (the old bug — timezone-suffixed dates mis-sort, so
-            #   the release tag carrying the golden fix survived). Ancestor tags
-            #   (real old releases) are KEPT so `git describe` / setuptools_scm
-            #   version detection still works.
             f'git for-each-ref --format="%(refname)" refs/tags | while read t; do if ! git merge-base --is-ancestor "$t" {base} 2>/dev/null; then git tag -d "${{t#refs/tags/}}" >/dev/null 2>&1; fi; done || true',
             "git reflog expire --expire=now --all 2>/dev/null || true",
-            # physically delete the now-unreachable future commits. Plain
-            # `gc --prune=now` is NOT enough: git's repack/cruft-pack step honours
-            # `gc.pruneExpire` (default 2 weeks), so RECENTLY-created unreachable
-            # objects (the just-built future commits) get parked in a cruft pack
-            # and stay recoverable via `git cat-file`/`fsck --lost-found`. Forcing
-            # `gc.pruneExpire=now` + disabling cruft packs drops them immediately
-            # (this single gc already repacks + prunes — no extra repack -ad needed,
-            # which only added cost on large .git without changing the result).
             "git -c gc.pruneExpire=now -c gc.cruftPacks=false gc --prune=now 2>/dev/null || true",
         ]
 
@@ -893,14 +725,6 @@ true
         return result.get("returncode", 1) == 0
 
     def _hide_git(self) -> None:
-        """Move ``.git`` out of the repo to a random on-pod stash path.
-
-        The random path (fixed per instance after first hide) avoids the old
-        guessable ``{repo}_git_backup`` location; a root agent could still find
-        it via ``find / -name HEAD``, which is the accepted trade-off of hide
-        mode vs. physically deleting history. Any agent-planted ``.git`` in the
-        repo is dropped first so a later restore lands cleanly.
-        """
         if self._git_stash_path is None:
             self._git_stash_path = f"/usr/lib/.{uuid.uuid4().hex}"
         res = self.env.execute(f"mv {self.repo_path}/.git {self._git_stash_path}")
@@ -909,11 +733,6 @@ true
         self._git_hidden = True
 
     def _restore_git(self) -> None:
-        """Move the stashed ``.git`` back into the repo for reward calculation.
-
-        Drops any ``.git`` the agent may have planted in the repo (e.g. its own
-        ``git init``) so the stash lands at the canonical path.
-        """
         res = self.env.execute(f"rm -rf {self.repo_path}/.git && mv {self._git_stash_path} {self.repo_path}/.git")
         if res.get("returncode", 1) != 0:
             raise RuntimeError(f"Failed to restore .git directory: {res.get('output', '')}")

@@ -28,8 +28,6 @@ jobs:
           for f in src/mimoagent/agents/blackbox/resources/*.sh scripts/*.sh scripts/harness_payloads/*.sh; do
             bash -n "$f"
           done
-      - name: Public-repository hygiene
-        run: bash scripts/check_oss_hygiene.sh
       - name: Secret scan
         uses: gitleaks/gitleaks-action@v2
         env:

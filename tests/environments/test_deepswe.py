@@ -113,8 +113,6 @@ def test_v10_instance_keeps_default_leak_prevention():
 def test_v11_instance_detected_and_leak_prevention_off():
     env = DeepSWEEnvironment(_FakeEnv(), dict(V11_INSTANCE))
     assert env._is_v11 is True
-    # image history is pre-stripped at build time; strip/hide would break the
-    # instructed branch+commit workflow
     assert env.git_leak_prevention == "none"
 
 

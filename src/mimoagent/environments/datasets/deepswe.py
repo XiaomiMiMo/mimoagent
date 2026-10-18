@@ -179,11 +179,6 @@ class DeepSWEEnvironment(DatasetEnvironment):
         if str(instance.get("schema_version", "")).startswith("1.1") and not self._is_v11:
             raise ValueError(f"{instance.get('instance_id')}: schema_version 1.1 but missing 'grader_py'/'config_json'")
         if self._is_v11:
-            # History is already stripped inside the v1.1 image (main -> base
-            # commit, future refs gc'd at build time); strip would delete the
-            # natural `main` the task promises and hide would break the
-            # instructed branch+commit workflow. yaml `git_leak_prevention`
-            # still overrides (applied after construction in create_from_registry).
             self.git_leak_prevention = "none"
         # Byte-exact model.patch pulled off the agent pod by _capture_model_diff;
         # None means capture has not run or failed (=> infra error at grading).

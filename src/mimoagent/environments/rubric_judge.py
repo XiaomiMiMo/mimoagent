@@ -67,8 +67,7 @@ to ``calculate_reward()`` by design — the runner attaches it via
 :meth:`DatasetEnvironment.attach_rollout` right before reward (see
 ``batch.py``); the env ctor keeps the uniform ``(base_env, instance)``
 signature for embedding frameworks. Judge agent config comes from the yaml
-``environment.judge_agent`` block, threaded through ``make_dataset_env`` like
-``anti_hack_cleanup``.
+``environment.judge_agent`` block, threaded through ``make_dataset_env``.
 """
 
 from __future__ import annotations
